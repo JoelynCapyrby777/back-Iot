@@ -3,6 +3,8 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Hash;
+use App\Models\User;
 
 return new class extends Migration
 {
@@ -35,6 +37,13 @@ return new class extends Migration
             $table->longText('payload');
             $table->integer('last_activity')->index();
         });
+
+        // Insertar usuario estático después de la migración
+        User::create([
+            'name' => 'Yoel Canul',
+            'email' => 'yoel.canul.yacg@gmail.com',
+            'password' => Hash::make('dianita24'),
+        ]);
     }
 
     /**

@@ -18,8 +18,11 @@ class DataConsumerController extends Controller
      */
     public function consumirYAlmacenarDatos()
     {
+
+        
+
         // Consumir datos de la API externa
-        $response = Http::get('http://moriahmkt.com/iotapp/');
+        $response = Http::withoutVerifying()->get('https://moriahmkt.com/iotapp/test/');
 
         if ($response->failed()) {
             Log::error('Error al consumir la API externa');
@@ -31,7 +34,6 @@ class DataConsumerController extends Controller
         // 1. Almacenar mediciones globales de sensores
         if (isset($data['sensores']) && is_array($data['sensores'])) {
             foreach ($data['sensores'] as $nombreSensor => $valor) {
-                // Se espera que el nombre del sensor en la BD esté en mayúscula inicial
                 $sensor = Sensor::where('name', ucfirst($nombreSensor))->first();
                 if ($sensor) {
                     MedicionGeneral::create([
@@ -47,17 +49,31 @@ class DataConsumerController extends Controller
             Log::warning("No se encontraron datos de sensores en la respuesta.");
         }
 
-        // 2. Almacenar mediciones de parcelas
+        // 2. Almacenar mediciones de parcelas y actualizar coordenadas
         if (isset($data['parcelas']) && is_array($data['parcelas'])) {
             foreach ($data['parcelas'] as $parcelaData) {
-                // Se asume que el 'id' en el JSON corresponde al ID de la parcela en la BD.
                 $parcela = Parcela::find($parcelaData['id']);
                 if (!$parcela) {
                     Log::warning("Parcela con ID {$parcelaData['id']} no encontrada.");
                     continue;
                 }
 
-                // Cada parcela trae un bloque 'sensor' con sus mediciones específicas.
+                // ✅ Actualizar latitud y longitud si vienen datos nuevos
+                if (isset($parcelaData['latitud'], $parcelaData['longitud'])) {
+                    $nuevaLatitud = (float) $parcelaData['latitud'];
+                    $nuevaLongitud = (float) $parcelaData['longitud'];
+
+                    // Solo actualiza si la latitud o longitud cambiaron
+                    if ($parcela->latitude != $nuevaLatitud || $parcela->longitude != $nuevaLongitud) {
+                        Log::info("Actualizando ubicación de Parcela ID {$parcela->id}: Nueva Latitud {$nuevaLatitud}, Nueva Longitud {$nuevaLongitud}");
+                        $parcela->update([
+                            'latitude'  => $nuevaLatitud,
+                            'longitude' => $nuevaLongitud,
+                        ]);
+                    }
+                }
+
+                // ✅ Almacenar mediciones de sensores de la parcela
                 if (isset($parcelaData['sensor']) && is_array($parcelaData['sensor'])) {
                     foreach ($parcelaData['sensor'] as $nombreSensor => $valor) {
                         $sensor = Sensor::where('name', ucfirst($nombreSensor))->first();

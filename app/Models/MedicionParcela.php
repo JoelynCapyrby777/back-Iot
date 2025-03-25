@@ -16,16 +16,20 @@ class MedicionParcela extends Model
         'parcela_id',
         'sensor_id',
         'value',
-        'date'
+        'date',
+        'registered_in'
+
     ];
 
-    public function parcela()
-    {
-        return $this->belongsTo(Parcela::class, 'parcela_id');
-    }
+    // En MedicionParcela.php
+public function sensor()
+{
+    return $this->belongsTo(Sensor::class, 'sensor_id');
+}
 
-    public function sensor()
-    {
-        return $this->belongsTo(Sensor::class, 'sensor_id');
-    }
+public function parcela()
+{
+    return $this->belongsTo(Parcela::class, 'parcela_id');
+}
+
 }

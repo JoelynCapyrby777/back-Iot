@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\MedicionGeneral;
+use Illuminate\Support\Facades\DB;
 
 class MedicionGeneralController extends Controller
 {
@@ -57,5 +58,19 @@ class MedicionGeneralController extends Controller
         }
         $medicion->delete();
         return response()->json(['message' => 'Medición eliminada']);
+    }
+
+    // Obtener las últimas mediciones por cada sensor
+    public function ultimasMediciones()
+    {
+        $ultimasMediciones = MedicionGeneral::select('sensor_id', 'value', 'date', 'registered_in')
+            ->whereIn('id', function ($query) {
+                $query->select(DB::raw('MAX(id)'))
+                      ->from('mediciones_generales')
+                      ->groupBy('sensor_id');
+            })
+            ->get();
+
+        return response()->json($ultimasMediciones);
     }
 }

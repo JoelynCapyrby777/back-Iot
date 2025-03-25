@@ -15,15 +15,21 @@ return new class extends Migration
     {
         Schema::create('parcelas', function (Blueprint $table) {
             $table->id();
-            $table->string('name');           // Nombre (equivalente a "nombre" en el JSON)
-            $table->string('location');       // Ubicación (equivalente a "ubicacion")
-            $table->string('responsible');    // Responsable (equivalente a "responsable")
-            $table->string('crop_type');      // Tipo de cultivo (equivalente a "tipo_cultivo")
-            $table->dateTime('last_watering'); // Último riego (equivalente a "ultimo_riego")
-            $table->decimal('latitude', 10, 8);
-            $table->decimal('longitude', 10, 8);
-            // Clave foránea a usuarios (se hace nullable si se quiere permitir parcelas sin usuario)
+            $table->string('name');           // Nombre de la parcela
+            $table->string('location');       // Ubicación
+            $table->string('responsible');    // Responsable
+            $table->string('crop_type');      // Tipo de cultivo
+            $table->dateTime('last_watering'); // Último riego
+            
+            // Permitir actualización de latitud y longitud
+            $table->decimal('latitude', 10, 8)->nullable();  
+            $table->decimal('longitude', 10, 8)->nullable();
+
             $table->foreignId('user_id')->nullable()->constrained('users')->onDelete('cascade');
+
+            // Estado de la parcela (activa/inactiva)
+            $table->enum('status', ['active', 'inactive'])->default('active'); 
+
             $table->timestamps();
         });
 
@@ -36,9 +42,10 @@ return new class extends Migration
                 'responsible'   => 'Juan Pérez',
                 'crop_type'     => 'Tomate',
                 'last_watering' => '2025-03-23 20:18:44',
-                'latitude'      => 21.05572286, // redondeado a 8 decimales
+                'latitude'      => 21.05572286,
                 'longitude'     => -86.86942155,
-                'user_id'       => 1, // Ajusta según el usuario existente o déjalo null
+                'user_id'       => 1,
+                'status'        => 'active', // Activa
                 'created_at'    => Carbon::now(),
                 'updated_at'    => Carbon::now(),
             ],
@@ -52,6 +59,7 @@ return new class extends Migration
                 'latitude'      => 21.06749708,
                 'longitude'     => -86.87156732,
                 'user_id'       => 1,
+                'status'        => 'active', // Activa
                 'created_at'    => Carbon::now(),
                 'updated_at'    => Carbon::now(),
             ],
@@ -65,6 +73,7 @@ return new class extends Migration
                 'latitude'      => 21.06501416,
                 'longitude'     => -86.88796098,
                 'user_id'       => 1,
+                'status'        => 'active', // Activa
                 'created_at'    => Carbon::now(),
                 'updated_at'    => Carbon::now(),
             ],
@@ -78,6 +87,21 @@ return new class extends Migration
                 'latitude'      => 21.05548256,
                 'longitude'     => -86.87216813,
                 'user_id'       => 1,
+                'status'        => 'inactive', // Deshabilitada
+                'created_at'    => Carbon::now(),
+                'updated_at'    => Carbon::now(),
+            ],
+            [
+                'id'            => 5,
+                'name'          => 'Parcela 5',
+                'location'      => 'Zona Centro',
+                'responsible'   => 'Sebastian Mollinedo',
+                'crop_type'     => 'Arroz',
+                'last_watering' => '2025-03-23 20:18:44',
+                'latitude'      => 21.06997996,
+                'longitude'     => -86.88100869,
+                'user_id'       => 1,
+                'status'        => 'active', // Activa
                 'created_at'    => Carbon::now(),
                 'updated_at'    => Carbon::now(),
             ],

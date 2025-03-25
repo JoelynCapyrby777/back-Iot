@@ -9,9 +9,6 @@ use App\Http\Controllers\MedicionParcelaController;
 use App\Http\Controllers\DataConsumerController;
 
 
-
-
-
 Route::get('/ping', function () {
     return response()->json(['message' => 'pong']);
 });
@@ -35,3 +32,12 @@ Route::apiResource('mediciones/parcelas', MedicionParcelaController::class);
 
 // Ruta para consumir la API externa y almacenar datos
 Route::get('/consumir-datos', [DataConsumerController::class, 'consumirYAlmacenarDatos']);
+
+// Rutas adicionales para obtener las últimas mediciones
+Route::get('/mediciones/ultimas-general', [MedicionGeneralController::class, 'ultimasMediciones']);
+Route::get('/mediciones/ultimas-parcela', [MedicionParcelaController::class, 'ultimasMedicionesParcelas']);
+
+Route::get('/test', function() {
+    return response()->json(['message' => 'Ruta de prueba funciona']);
+});
+

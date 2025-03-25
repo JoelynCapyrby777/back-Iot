@@ -15,7 +15,8 @@ class MedicionGeneral extends Model
     protected $fillable = [
         'sensor_id',
         'value',
-        'date'
+        'date',
+        'registered_in'
     ];
 
     public function sensor()

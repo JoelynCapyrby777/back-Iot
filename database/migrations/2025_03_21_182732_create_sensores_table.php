@@ -41,7 +41,7 @@ return new class extends Migration
             ],
             [
                 'name'       => 'Sol',
-                'unit'       => 'W/m²',
+                'unit'       => '%',
                 'created_at' => now(),
                 'updated_at' => now(),
             ],

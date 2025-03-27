@@ -5,6 +5,10 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Database\Schema\Blueprint;
 use Carbon\Carbon;
 use App\Models\Sensor;
 use App\Models\Parcela;
@@ -18,84 +22,276 @@ class DataConsumerController extends Controller
      */
     public function consumirYAlmacenarDatos()
     {
-
-        
-
-        // Consumir datos de la API externa
-        $response = Http::withoutVerifying()->get('https://moriahmkt.com/iotapp/test/');
-
-        if ($response->failed()) {
-            Log::error('Error al consumir la API externa');
-            return response()->json(['error' => 'Error al consumir la API externa'], 500);
+        $lock = Cache::lock('data_consumer_lock', 120);
+        if (!$lock->get()) {
+            Log::warning('Intento de ejecución concurrente de consumirYAlmacenarDatos');
+            return response()->json(['error' => 'El proceso ya está en ejecución'], 409);
         }
-
-        $data = $response->json();
-
-        // 1. Almacenar mediciones globales de sensores
-        if (isset($data['sensores']) && is_array($data['sensores'])) {
-            foreach ($data['sensores'] as $nombreSensor => $valor) {
-                $sensor = Sensor::where('name', ucfirst($nombreSensor))->first();
-                if ($sensor) {
-                    MedicionGeneral::create([
-                        'sensor_id' => $sensor->id,
-                        'value'     => $valor,
-                        'date'      => Carbon::now(),
-                    ]);
-                } else {
-                    Log::warning("Sensor '{$nombreSensor}' no encontrado para mediciones generales.");
-                }
+    
+        // Verificar conexión a DB antes de comenzar
+        try {
+            DB::connection()->getPdo();
+        } catch (\Exception $e) {
+            $lock->release();
+            Log::error("Error de conexión a BD: " . $e->getMessage());
+            return response()->json(['error' => 'Error de conexión a la base de datos'], 500);
+        }
+    
+        $transactionStarted = false;
+        try {
+            DB::beginTransaction();
+            $transactionStarted = true;
+    
+            $now = now();
+            $response = Http::withoutVerifying()
+                ->timeout(30)
+                ->retry(3, 1000)
+                ->get('https://moriahmkt.com/iotapp/test/');
+    
+            if ($response->failed()) {
+                throw new \Exception('Error al consumir la API: ' . $response->status());
             }
-        } else {
-            Log::warning("No se encontraron datos de sensores en la respuesta.");
-        }
-
-        // 2. Almacenar mediciones de parcelas y actualizar coordenadas
-        if (isset($data['parcelas']) && is_array($data['parcelas'])) {
-            foreach ($data['parcelas'] as $parcelaData) {
-                $parcela = Parcela::find($parcelaData['id']);
-                if (!$parcela) {
-                    Log::warning("Parcela con ID {$parcelaData['id']} no encontrada.");
-                    continue;
-                }
-
-                // ✅ Actualizar latitud y longitud si vienen datos nuevos
-                if (isset($parcelaData['latitud'], $parcelaData['longitud'])) {
-                    $nuevaLatitud = (float) $parcelaData['latitud'];
-                    $nuevaLongitud = (float) $parcelaData['longitud'];
-
-                    // Solo actualiza si la latitud o longitud cambiaron
-                    if ($parcela->latitude != $nuevaLatitud || $parcela->longitude != $nuevaLongitud) {
-                        Log::info("Actualizando ubicación de Parcela ID {$parcela->id}: Nueva Latitud {$nuevaLatitud}, Nueva Longitud {$nuevaLongitud}");
-                        $parcela->update([
-                            'latitude'  => $nuevaLatitud,
-                            'longitude' => $nuevaLongitud,
-                        ]);
-                    }
-                }
-
-                // ✅ Almacenar mediciones de sensores de la parcela
-                if (isset($parcelaData['sensor']) && is_array($parcelaData['sensor'])) {
-                    foreach ($parcelaData['sensor'] as $nombreSensor => $valor) {
-                        $sensor = Sensor::where('name', ucfirst($nombreSensor))->first();
-                        if ($sensor) {
-                            MedicionParcela::create([
-                                'parcela_id' => $parcela->id,
-                                'sensor_id'  => $sensor->id,
-                                'value'      => $valor,
-                                'date'       => Carbon::now(),
-                            ]);
-                        } else {
-                            Log::warning("Sensor '{$nombreSensor}' no encontrado para la parcela ID {$parcela->id}.");
-                        }
-                    }
-                } else {
-                    Log::warning("No se encontraron datos de sensores para la parcela ID {$parcelaData['id']}.");
-                }
+    
+            $data = $response->json();
+            if (!is_array($data)) {
+                throw new \Exception('Respuesta de API no válida');
             }
-        } else {
-            Log::warning("No se encontraron datos de parcelas en la respuesta.");
+    
+            // Procesamiento de datos...
+            $this->procesarParcelasDesaparecidas($data['parcelas'] ?? [], $now);
+            $sensors = $this->cargarSensores($data);
+            $this->procesarSensoresGlobales($data['sensores'] ?? [], $sensors, $now);
+            $this->procesarParcelas($data['parcelas'] ?? [], $sensors, $now);
+    
+            DB::commit();
+            Log::info('Datos consumidos y almacenados correctamente');
+            return response()->json(['message' => 'Datos procesados correctamente'], 200);
+    
+        } catch (\Exception $e) {
+            if ($transactionStarted) {
+                DB::rollBack();
+            }
+            Log::error("Error en consumirYAlmacenarDatos: " . $e->getMessage());
+            return response()->json(['error' => $e->getMessage()], 500);
+        } finally {
+            $lock->release();
+        }
+    }
+    /**
+     * Procesa las parcelas que ya no aparecen en la API
+     */
+    protected function procesarParcelasDesaparecidas(array $parcelasApi, Carbon $now)
+    {
+        $parcelasApiIds = collect($parcelasApi)->pluck('id')->toArray();
+        $parcelasParaInactivar = Parcela::whereNotIn('id', $parcelasApiIds)
+                                      ->where('status', 'active')
+                                      ->get();
+
+        // Crear tabla de respaldo si no existe (sin default en campo TEXT)
+        if (!Schema::hasTable('parcelas_backup')) {
+            Schema::create('parcelas_backup', function (Blueprint $table) {
+                $table->id();
+                $table->integer('original_id');
+                $table->string('name');
+                $table->string('location');
+                $table->string('responsible');
+                $table->string('crop_type');
+                $table->dateTime('last_watering');
+                $table->decimal('latitude', 10, 8)->nullable();
+                $table->decimal('longitude', 10, 8)->nullable();
+                $table->foreignId('user_id')->nullable();
+                $table->enum('status', ['active', 'inactive']);
+                $table->dateTime('backup_date');
+                $table->text('reason'); // Eliminado el default por compatibilidad con MySQL
+                $table->timestamps();
+            });
         }
 
-        return response()->json(['message' => 'Datos consumidos y almacenados correctamente'], 200);
+        // Respaldo de parcelas que van a ser inactivadas
+        foreach ($parcelasParaInactivar as $parcela) {
+            DB::table('parcelas_backup')->insert([
+                'original_id' => $parcela->id,
+                'name' => $parcela->name,
+                'location' => $parcela->location,
+                'responsible' => $parcela->responsible,
+                'crop_type' => $parcela->crop_type,
+                'last_watering' => $parcela->last_watering,
+                'latitude' => $parcela->latitude,
+                'longitude' => $parcela->longitude,
+                'user_id' => $parcela->user_id,
+                'status' => $parcela->status,
+                'backup_date' => $now,
+                'reason' => 'Parcela desaparecida de la API', // Valor asignado aquí
+                'created_at' => $now,
+                'updated_at' => $now
+            ]);
+        }
+
+        // Marcar como inactivas las parcelas que ya no están en la API
+        Parcela::whereNotIn('id', $parcelasApiIds)
+             ->where('status', 'active')
+             ->update(['status' => 'inactive', 'updated_at' => $now]);
+
+        Log::info('Parcelas inactivas procesadas: ' . $parcelasParaInactivar->count());
+    }
+
+    /**
+     * Carga y devuelve todos los sensores necesarios
+     */
+    protected function cargarSensores(array $data): \Illuminate\Support\Collection
+    {
+        $sensorNames = collect($data['sensores'] ?? [])
+            ->merge(collect($data['parcelas'] ?? [])->pluck('sensor')->collapse())
+            ->keys()
+            ->map(fn($name) => strtolower($name))
+            ->unique();
+
+        $sensors = Sensor::whereIn(DB::raw('LOWER(name)'), $sensorNames)
+                       ->get()
+                       ->keyBy(fn($s) => strtolower($s->name));
+
+        if ($sensors->isEmpty()) {
+            Log::warning('No se encontraron sensores en la base de datos');
+        }
+
+        return $sensors;
+    }
+
+    /**
+     * Procesa los sensores globales
+     */
+    protected function procesarSensoresGlobales(array $sensoresData, \Illuminate\Support\Collection $sensors, Carbon $now)
+    {
+        foreach ($sensoresData as $nombreSensor => $valor) {
+            $sensorKey = strtolower($nombreSensor);
+            if (!$sensors->has($sensorKey)) {
+                Log::warning("Sensor global no encontrado: {$nombreSensor}");
+                continue;
+            }
+
+            $valor = $this->normalizarValorSensor($valor);
+            if ($valor === null) {
+                Log::warning("Valor inválido para sensor global {$nombreSensor}: {$valor}");
+                continue;
+            }
+
+            MedicionGeneral::create([
+                'sensor_id' => $sensors[$sensorKey]->id,
+                'value' => $valor,
+                'date' => $now,
+            ]);
+        }
+
+        Log::info('Sensores globales procesados: ' . count($sensoresData));
+    }
+
+    /**
+     * Procesa las parcelas y sus sensores
+     */
+    protected function procesarParcelas(array $parcelasData, \Illuminate\Support\Collection $sensors, Carbon $now)
+    {
+        foreach ($parcelasData as $parcelaData) {
+            $parcela = Parcela::find($parcelaData['id'] ?? null);
+            if (!$parcela) {
+                Log::warning("Parcela no encontrada: " . ($parcelaData['id'] ?? 'null'));
+                continue;
+            }
+
+            // Actualizar datos básicos de la parcela
+            $this->actualizarDatosParcela($parcela, $parcelaData, $now);
+
+            // Procesar sensores de la parcela
+            $this->procesarSensoresParcela($parcela, $parcelaData['sensor'] ?? [], $sensors, $now);
+        }
+
+        Log::info('Parcelas procesadas: ' . count($parcelasData));
+    }
+
+    /**
+     * Actualiza los datos básicos de una parcela
+     */
+    protected function actualizarDatosParcela(Parcela $parcela, array $parcelaData, Carbon $now)
+    {
+        $updates = [];
+
+        // Actualizar coordenadas si son válidas
+        if (isset($parcelaData['latitud'], $parcelaData['longitud'])) {
+            $lat = floatval($parcelaData['latitud']);
+            $lng = floatval($parcelaData['longitud']);
+            
+            if ($this->validarCoordenadas($lat, $lng)) {
+                $updates['latitude'] = $lat;
+                $updates['longitude'] = $lng;
+            }
+        }
+
+        // Actualizar otros campos si han cambiado
+        $campos = [
+            'nombre' => 'name', 
+            'ubicacion' => 'location', 
+            'responsable' => 'responsible', 
+            'tipo_cultivo' => 'crop_type',
+            'ultimo_riego' => 'last_watering'
+        ];
+
+        foreach ($campos as $apiKey => $dbField) {
+            if (isset($parcelaData[$apiKey]) && $parcela->$dbField != $parcelaData[$apiKey]) {
+                $updates[$dbField] = $parcelaData[$apiKey];
+            }
+        }
+
+        // Marcar como activa si estaba inactiva (ya que ahora aparece en la API)
+        if ($parcela->status == 'inactive') {
+            $updates['status'] = 'active';
+        }
+
+        if (!empty($updates)) {
+            $updates['updated_at'] = $now;
+            $parcela->update($updates);
+        }
+    }
+
+    /**
+     * Procesa los sensores de una parcela específica
+     */
+    protected function procesarSensoresParcela(Parcela $parcela, array $sensoresData, \Illuminate\Support\Collection $sensors, Carbon $now)
+    {
+        foreach ($sensoresData as $nombreSensor => $valor) {
+            $sensorKey = strtolower($nombreSensor);
+            if (!$sensors->has($sensorKey)) {
+                Log::warning("Sensor no encontrado para parcela {$parcela->id}: {$nombreSensor}");
+                continue;
+            }
+
+            $valor = $this->normalizarValorSensor($valor);
+            if ($valor === null) {
+                Log::warning("Valor inválido para sensor {$nombreSensor} en parcela {$parcela->id}: {$valor}");
+                continue;
+            }
+
+            MedicionParcela::create([
+                'parcela_id' => $parcela->id,
+                'sensor_id' => $sensors[$sensorKey]->id,
+                'value' => $valor,
+                'date' => $now,
+            ]);
+        }
+    }
+
+    /**
+     * Normaliza y valida el valor de un sensor
+     */
+    protected function normalizarValorSensor($valor): ?float
+    {
+        $valor = is_numeric($valor) ? floatval($valor) : null;
+        return ($valor !== null && is_finite($valor)) ? $valor : null;
+    }
+
+    /**
+     * Valida que las coordenadas sean correctas
+     */
+    protected function validarCoordenadas(float $lat, float $lng): bool
+    {
+        return $lat >= -90 && $lat <= 90 && $lng >= -180 && $lng <= 180;
     }
 }

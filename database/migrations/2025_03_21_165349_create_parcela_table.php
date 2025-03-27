@@ -45,7 +45,7 @@ return new class extends Migration
                 'latitude'      => 21.05572286,
                 'longitude'     => -86.86942155,
                 'user_id'       => 1,
-                'status'        => 'active', // Activa
+                'status'        => 'active',
                 'created_at'    => Carbon::now(),
                 'updated_at'    => Carbon::now(),
             ],
@@ -59,7 +59,7 @@ return new class extends Migration
                 'latitude'      => 21.06749708,
                 'longitude'     => -86.87156732,
                 'user_id'       => 1,
-                'status'        => 'active', // Activa
+                'status'        => 'active',
                 'created_at'    => Carbon::now(),
                 'updated_at'    => Carbon::now(),
             ],
@@ -73,7 +73,7 @@ return new class extends Migration
                 'latitude'      => 21.06501416,
                 'longitude'     => -86.88796098,
                 'user_id'       => 1,
-                'status'        => 'active', // Activa
+                'status'        => 'active',
                 'created_at'    => Carbon::now(),
                 'updated_at'    => Carbon::now(),
             ],
@@ -87,7 +87,7 @@ return new class extends Migration
                 'latitude'      => 21.05548256,
                 'longitude'     => -86.87216813,
                 'user_id'       => 1,
-                'status'        => 'inactive', // Deshabilitada
+                'status'        => 'inactive',
                 'created_at'    => Carbon::now(),
                 'updated_at'    => Carbon::now(),
             ],
@@ -101,10 +101,24 @@ return new class extends Migration
                 'latitude'      => 21.06997996,
                 'longitude'     => -86.88100869,
                 'user_id'       => 1,
-                'status'        => 'active', // Activa
+                'status'        => 'active',
                 'created_at'    => Carbon::now(),
                 'updated_at'    => Carbon::now(),
             ],
+            [
+                'id'            => 6,
+                'name'          => 'Parcela 6',
+                'location'      => 'Zona Noreste',
+                'responsible'   => 'Roberto Rocha Suaste',
+                'crop_type'     => 'Chile Habanero',
+                'last_watering' => '2025-03-23 20:18:44',
+                'latitude'      => 21.05572286,
+                'longitude'     => -86.86942155,
+                'user_id'       => 1,
+                'status'        => 'inactive',
+                'created_at'    => Carbon::now(),
+                'updated_at'    => Carbon::now(),
+            ]
         ]);
     }
 

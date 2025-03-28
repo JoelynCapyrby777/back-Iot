@@ -45,7 +45,7 @@ class DataConsumerController extends Controller
             $response = Http::withoutVerifying()
                 ->timeout(30)
                 ->retry(3, 1000)
-                ->get('https://moriahmkt.com/iotapp/test/');
+                ->get('https://moriahmkt.com/iotapp/updated/');
     
             if ($response->failed()) {
                 throw new \Exception('Error al consumir la API: ' . $response->status());
@@ -58,6 +58,9 @@ class DataConsumerController extends Controller
 
             // Obtener IDs de parcelas en la API
             $parcelasApiIds = collect($data['parcelas'] ?? [])->pluck('id')->toArray();
+            
+            // Crear nuevas parcelas que no existan en la base de datos
+            $this->crearNuevasParcelas($data['parcelas'] ?? [], $now);
             
             // Activar parcelas que aparecen en la API pero están inactivas
             Parcela::whereIn('id', $parcelasApiIds)
@@ -87,62 +90,99 @@ class DataConsumerController extends Controller
     }
 
     /**
+     * Crea nuevas parcelas que aparecen en la API pero no existen en la base de datos
+     */
+    protected function crearNuevasParcelas(array $parcelasData, Carbon $now)
+    {
+        $parcelasApiIds = collect($parcelasData)->pluck('id')->toArray();
+        $parcelasExistentes = Parcela::whereIn('id', $parcelasApiIds)->pluck('id')->toArray();
+        $nuevasParcelasIds = array_diff($parcelasApiIds, $parcelasExistentes);
+
+        foreach ($parcelasData as $parcelaData) {
+            if (in_array($parcelaData['id'], $nuevasParcelasIds)) {
+                $nuevaParcela = [
+                    'id' => $parcelaData['id'],
+                    'name' => $parcelaData['nombre'] ?? 'Nueva Parcela',
+                    'location' => $parcelaData['ubicacion'] ?? 'Ubicación no especificada',
+                    'responsible' => $parcelaData['responsable'] ?? null,
+                    'crop_type' => $parcelaData['tipo_cultivo'] ?? null,
+                    'last_watering' => $parcelaData['ultimo_riego'] ?? null,
+                    'latitude' => isset($parcelaData['latitud']) ? floatval($parcelaData['latitud']) : null,
+                    'longitude' => isset($parcelaData['longitud']) ? floatval($parcelaData['longitud']) : null,
+                    'status' => 'active',
+                    'created_at' => $now,
+                    'updated_at' => $now
+                ];
+
+                // Validar coordenadas antes de insertar
+                if (isset($nuevaParcela['latitude'], $nuevaParcela['longitude']) && 
+                    !$this->validarCoordenadas($nuevaParcela['latitude'], $nuevaParcela['longitude'])) {
+                    $nuevaParcela['latitude'] = null;
+                    $nuevaParcela['longitude'] = null;
+                    Log::warning("Coordenadas inválidas para nueva parcela {$parcelaData['id']}");
+                }
+
+                Parcela::create($nuevaParcela);
+                Log::info("Nueva parcela creada: {$parcelaData['id']}");
+            }
+        }
+    }
+
+    /**
      * Procesa las parcelas que ya no aparecen en la API
      */
+    protected function procesarParcelasDesaparecidas(array $parcelasApiIds, Carbon $now)
+    {
+        $parcelasParaInactivar = Parcela::whereNotIn('id', $parcelasApiIds)
+                                      ->where('status', 'active')
+                                      ->get();
 
-     protected function procesarParcelasDesaparecidas(array $parcelasApiIds, Carbon $now)
-     {
-         $parcelasParaInactivar = Parcela::whereNotIn('id', $parcelasApiIds)
-                                       ->where('status', 'active')
-                                       ->get();
- 
-         if (!Schema::hasTable('parcelas_backup')) {
-             Schema::create('parcelas_backup', function (Blueprint $table) {
-                 $table->id();
-                 $table->integer('original_id');
-                 $table->string('name');
-                 $table->string('location');
-                 $table->string('responsible');
-                 $table->string('crop_type');
-                 $table->dateTime('last_watering');
-                 $table->decimal('latitude', 10, 8)->nullable();
-                 $table->decimal('longitude', 10, 8)->nullable();
-                 $table->foreignId('user_id')->nullable();
-                 $table->enum('status', ['active', 'inactive']);
-                 $table->dateTime('backup_date');
-                 $table->text('reason');
-                 $table->timestamps();
-             });
-         }
- 
-         foreach ($parcelasParaInactivar as $parcela) {
-             DB::table('parcelas_backup')->insert([
-                 'original_id' => $parcela->id,
-                 'name' => $parcela->name,
-                 'location' => $parcela->location,
-                 'responsible' => $parcela->responsible,
-                 'crop_type' => $parcela->crop_type,
-                 'last_watering' => $parcela->last_watering,
-                 'latitude' => $parcela->latitude,
-                 'longitude' => $parcela->longitude,
-                 'user_id' => $parcela->user_id,
-                 'status' => $parcela->status,
-                 'backup_date' => $now,
-                 'reason' => 'Parcela no presente en la API',
-                 'created_at' => $now,
-                 'updated_at' => $now
-             ]);
- 
-             // Actualizar el estado a inactivo
-             $parcela->update([
-                 'status' => 'inactive',
-                 'updated_at' => $now
-             ]);
-         }
- 
-         Log::info('Parcelas inactivadas: ' . $parcelasParaInactivar->count());
-     }
+        if (!Schema::hasTable('parcelas_backup')) {
+            Schema::create('parcelas_backup', function (Blueprint $table) {
+                $table->id();
+                $table->integer('original_id');
+                $table->string('name');
+                $table->string('location');
+                $table->string('responsible');
+                $table->string('crop_type');
+                $table->dateTime('last_watering');
+                $table->decimal('latitude', 10, 8)->nullable();
+                $table->decimal('longitude', 10, 8)->nullable();
+                $table->foreignId('user_id')->nullable();
+                $table->enum('status', ['active', 'inactive']);
+                $table->dateTime('backup_date');
+                $table->text('reason');
+                $table->timestamps();
+            });
+        }
 
+        foreach ($parcelasParaInactivar as $parcela) {
+            DB::table('parcelas_backup')->insert([
+                'original_id' => $parcela->id,
+                'name' => $parcela->name,
+                'location' => $parcela->location,
+                'responsible' => $parcela->responsible,
+                'crop_type' => $parcela->crop_type,
+                'last_watering' => $parcela->last_watering,
+                'latitude' => $parcela->latitude,
+                'longitude' => $parcela->longitude,
+                'user_id' => $parcela->user_id,
+                'status' => $parcela->status,
+                'backup_date' => $now,
+                'reason' => 'Parcela no presente en la API',
+                'created_at' => $now,
+                'updated_at' => $now
+            ]);
+
+            // Actualizar el estado a inactivo
+            $parcela->update([
+                'status' => 'inactive',
+                'updated_at' => $now
+            ]);
+        }
+
+        Log::info('Parcelas inactivadas: ' . $parcelasParaInactivar->count());
+    }
 
     /**
      * Carga y devuelve todos los sensores necesarios
@@ -220,8 +260,8 @@ class DataConsumerController extends Controller
         ];
 
         if (isset($parcelaData['latitud'], $parcelaData['longitud'])) {
-            $lat = floatval($parcelaData['latitud']);
-            $lng = floatval($parcelaData['longitud']);
+            $lat = round(floatval($parcelaData['latitud']), 8);
+            $lng = round(floatval($parcelaData['longitud']), 8);
             
             if ($this->validarCoordenadas($lat, $lng)) {
                 $updates['latitude'] = $lat;
@@ -272,15 +312,30 @@ class DataConsumerController extends Controller
             ]);
         }
     }
+
     /**
      * Normaliza y valida el valor de un sensor
      */
     protected function normalizarValorSensor($valor): ?float
-    {
-        $valor = is_numeric($valor) ? floatval($valor) : null;
-        return ($valor !== null && is_finite($valor)) ? $valor : null;
+{
+    if (!is_numeric($valor)) {
+        return null;
     }
-     /* Valida que las coordenadas sean correctas
+    
+    // Redondea a 2 decimales y ajusta valores absurdos
+    $valor = round(floatval($valor), 2);
+    
+    // Validación adicional para rangos esperados
+    if ($valor > 999.99 || $valor < -999.99) {
+        Log::warning("Valor fuera de rango: {$valor}");
+        return null;
+    }
+    
+    return $valor;
+}
+
+    /**
+     * Valida que las coordenadas sean correctas
      */
     protected function validarCoordenadas(float $lat, float $lng): bool
     {

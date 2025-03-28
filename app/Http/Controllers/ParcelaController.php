@@ -65,13 +65,29 @@ class ParcelaController extends Controller
     }
 
     public function inactivas()
-    {
-        $parcelasInactivas = Parcela::where('status', 'inactive')->get();
+{
+    $parcelasInactivas = Parcela::where('status', 'inactive')->get();
 
-        if ($parcelasInactivas->isEmpty()) {
-            return response()->json(['message' => 'No hay parcelas inactivas'], 404);
-        }
-
-        return response()->json($parcelasInactivas);
+    if ($parcelasInactivas->isEmpty()) {
+        return response()->json(['message' => 'No hay parcelas inactivas'], 404);
     }
+
+    // Formateamos la respuesta con la estructura deseada
+    $resultado = [];
+    foreach ($parcelasInactivas as $parcela) {
+        $resultado[] = [
+            'id' => $parcela->id,
+            'nombre' => $parcela->name,
+            'ubicacion' => $parcela->location,
+            'responsable' => $parcela->responsible,
+            'tipo_cultivo' => $parcela->crop_type,
+            'ultimo_riego' => $parcela->last_watering,
+            'latitud' => $parcela->latitude,
+            'longitud' => $parcela->longitude,
+        ];
+    }
+
+    return response()->json($resultado);
+}
+
 }

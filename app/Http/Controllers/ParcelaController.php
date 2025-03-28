@@ -63,4 +63,15 @@ class ParcelaController extends Controller
         $parcela->delete();
         return response()->json(['message' => 'Parcela eliminada']);
     }
+
+    public function inactivas()
+    {
+        $parcelasInactivas = Parcela::where('status', 'inactive')->get();
+
+        if ($parcelasInactivas->isEmpty()) {
+            return response()->json(['message' => 'No hay parcelas inactivas'], 404);
+        }
+
+        return response()->json($parcelasInactivas);
+    }
 }

@@ -20,7 +20,8 @@ class Parcela extends Model
         'last_watering',// último riego (datetime)
         'latitude',
         'longitude',
-        'user_id'
+        'user_id',
+        'status' 
     ];
 
     public function medicionesParcelas()

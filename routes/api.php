@@ -20,8 +20,8 @@ Route::get('/ping', function () {
 
 // Rutas de autenticación con JWT
 Route::post('/login', [AuthController::class, 'login'])->name('login');
-Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth:api');
-Route::get('/user', [AuthController::class, 'obtenerUsuario'])->middleware('auth:api');
+Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
+Route::get('/user', [AuthController::class, 'obtenerUsuario'])->name('user');   
 
 // Rutas de sensores (CRUD)
 Route::apiResource('sensores', SensorController::class);

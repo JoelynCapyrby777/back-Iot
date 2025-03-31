@@ -24,16 +24,10 @@ class Parcela extends Model
         'status' 
     ];
 
-    public function medicionesParcelas()
-    {
-        return $this->hasMany(MedicionParcela::class, 'parcela_id');
-    }
-    
-    public function mediciones()
+    public function medicionesParcela()
 {
     return $this->hasMany(MedicionParcela::class, 'parcela_id');
 }
 
-
-
+    
 }

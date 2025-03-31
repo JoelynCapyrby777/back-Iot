@@ -28,4 +28,10 @@ class Parcela extends Model
     {
         return $this->hasMany(MedicionParcela::class, 'parcela_id');
     }
+    
+    public function mediciones()
+{
+    return $this->hasMany(MedicionParcela::class, 'parcela_id');
+}
+
 }

@@ -9,6 +9,11 @@ use App\Http\Controllers\ParcelaController;
 use App\Http\Controllers\MedicionParcelaController;
 use App\Http\Controllers\DataConsumerController;
 
+use App\Http\Controllers\MedicionActualController;
+
+
+
+
 Route::get('/ping', function () {
     return response()->json(['message' => 'pong']);
 });
@@ -41,3 +46,5 @@ Route::get('/mediciones/ultimas-parcela', [MedicionParcelaController::class, 'ul
 Route::get('/test', function() {
     return response()->json(['message' => 'Ruta de prueba funciona']);
 });
+
+Route::get('/mediciones/actuales', [MedicionActualController::class, 'datosActuales']);

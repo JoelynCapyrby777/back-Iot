@@ -64,30 +64,69 @@ class ParcelaController extends Controller
         return response()->json(['message' => 'Parcela eliminada']);
     }
 
+    // Mostrar parcelas inactivas
     public function inactivas()
-{
-    $parcelasInactivas = Parcela::where('status', 'inactive')->get();
+    {
+        $parcelasInactivas = Parcela::where('status', 'inactive')->get();
 
-    if ($parcelasInactivas->isEmpty()) {
-        return response()->json(['message' => 'No hay parcelas inactivas'], 404);
+        if ($parcelasInactivas->isEmpty()) {
+            return response()->json(['message' => 'No hay parcelas inactivas'], 404);
+        }
+
+        $resultado = [];
+        foreach ($parcelasInactivas as $parcela) {
+            $resultado[] = [
+                'id' => $parcela->id,
+                'nombre' => $parcela->name,
+                'ubicacion' => $parcela->location,
+                'responsable' => $parcela->responsible,
+                'tipo_cultivo' => $parcela->crop_type,
+                'ultimo_riego' => $parcela->last_watering,
+                'latitud' => $parcela->latitude,
+                'longitud' => $parcela->longitude,
+            ];
+        }
+
+        return response()->json($resultado);
     }
 
-    // Formateamos la respuesta con la estructura deseada
-    $resultado = [];
-    foreach ($parcelasInactivas as $parcela) {
-        $resultado[] = [
-            'id' => $parcela->id,
-            'nombre' => $parcela->name,
-            'ubicacion' => $parcela->location,
-            'responsable' => $parcela->responsible,
-            'tipo_cultivo' => $parcela->crop_type,
-            'ultimo_riego' => $parcela->last_watering,
-            'latitud' => $parcela->latitude,
-            'longitud' => $parcela->longitude,
-        ];
+    // Mostrar datos actuales de las parcelas
+    public function datosActuales()
+    {
+        // Obtener todas las parcelas activas con sus mediciones más recientes
+        $parcelas = Parcela::with(['mediciones' => function ($query) {
+            $query->orderBy('created_at', 'desc')->take(1);
+        }, 'mediciones.sensor'])->get();
+
+        $resultado = [];
+
+        foreach ($parcelas as $parcela) {
+            $sensoresParcela = [];
+
+            // Recolectar las últimas mediciones de sensores para cada parcela
+            foreach ($parcela->mediciones as $medicion) {
+                if ($medicion->sensor) {
+                    $tipoSensor = strtolower($medicion->sensor->name);  // Usar el nombre del sensor como clave
+                    $sensoresParcela[$tipoSensor] = floatval($medicion->value);
+                }
+            }
+
+            $resultado[] = [
+                'id' => $parcela->id,
+                'nombre' => $parcela->name,
+                'ubicacion' => $parcela->location,
+                'responsable' => $parcela->responsible,
+                'tipo_cultivo' => $parcela->crop_type,
+                'ultimo_riego' => $parcela->last_watering,
+                'latitud' => $parcela->latitude,
+                'longitud' => $parcela->longitude,
+                'sensor' => $sensoresParcela
+            ];
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'parcelas' => $resultado
+        ]);
     }
-
-    return response()->json($resultado);
-}
-
 }

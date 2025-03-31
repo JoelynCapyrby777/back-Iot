@@ -34,4 +34,6 @@ class Parcela extends Model
     return $this->hasMany(MedicionParcela::class, 'parcela_id');
 }
 
+
+
 }

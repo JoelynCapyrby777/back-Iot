@@ -1,6 +1,5 @@
 <?php
 
-
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\SensorController;
 use App\Http\Controllers\AuthController;
@@ -8,11 +7,7 @@ use App\Http\Controllers\MedicionGeneralController;
 use App\Http\Controllers\ParcelaController;
 use App\Http\Controllers\MedicionParcelaController;
 use App\Http\Controllers\DataConsumerController;
-
 use App\Http\Controllers\MedicionActualController;
-
-
-
 
 Route::get('/ping', function () {
     return response()->json(['message' => 'pong']);
@@ -30,6 +25,7 @@ Route::apiResource('sensores', SensorController::class);
 Route::apiResource('mediciones/generales', MedicionGeneralController::class);
 
 // Rutas de parcelas (CRUD)
+Route::get('/parcelas/status', [ParcelaController::class, 'index']);
 
 Route::get('/parcelas/inactivas', [ParcelaController::class, 'inactivas']);
 
